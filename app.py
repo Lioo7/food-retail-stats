@@ -446,22 +446,36 @@ def _parse_number(s: str) -> float:
 
 
 # Known Paz store names in PDF (Hebrew, may appear reversed in text extraction)
+# IMPORTANT: Longer/more-specific patterns must come BEFORE shorter ones
+# so that e.g. "ךז םחתמ" is matched before a bare "ךז" would be.
 PAZ_STORE_PATTERNS = {
+    # רופין / זך — all these variants map to רופין:
+    #   "מתחם זך - ליאת חג'ג'" → extracted as "'ג'גח תאיל - ךז םחתמ"
+    #   "פלאפל זך"              → extracted as "ךז לפאלפ"
     "ךז םחתמ": "רופין",
+    "ךז לפאלפ": "רופין",
     "חג'ג": "רופין",
     "ליאת": "רופין",
+    "פלאפל זך": "רופין",
+    "ךז": "רופין",
+    # טופז
     "זפוט": "טופז",
     "טופז": "טופז",
     "ינוב רחש": "טופז",
     "שחר בוני": "טופז",
+    # שקמה
     "המקש": "שקמה",
     "השקמה": "שקמה",
+    # מנחם
     "םחנמ": "מנחם",
     "מנחם": "מנחם",
+    # אשכול
     "לוכשא": "אשכול",
     "אשכול": "אשכול",
+    # נחלת
     "תלחנ": "נחלת",
     "נחלת": "נחלת",
+    # פז שוהם
     "םהוש לפאלפ": "פז שוהם",
     "פלאפל שוהם": "פז שוהם",
 }
@@ -615,8 +629,25 @@ def parse_pdf_sales(file_bytes: bytes, file_name: str, target_date: str) -> pd.D
         return pd.DataFrame()
 
     df = pd.DataFrame(results)
-    # Deduplicate: keep first entry per store (shouldn't have duplicates but just in case)
-    df = df.drop_duplicates(subset=["סניף"], keep="first")
+    if df.empty:
+        return df
+
+    # Aggregate: if multiple PDF lines map to the same master branch
+    # (e.g. "פלאפל זך" + "מתחם זך" both → רופין), sum revenue &
+    # transactions, take min/max times, and recalculate the average.
+    agg_dict = {
+        'מכר כולל מע"מ': "sum",
+        "מס' עסקאות": "sum",
+        "עסקה ראשונה": "min",
+        "עסקה אחרונה": "max",
+        "ממוצע עסקאות": "first",  # placeholder – recalculated below
+    }
+    df = df.groupby("סניף", as_index=False).agg(agg_dict)
+    # Recalculate average from the summed totals
+    mask = df["מס' עסקאות"] > 0
+    df.loc[mask, "ממוצע עסקאות"] = (
+        df.loc[mask, 'מכר כולל מע"מ'] / df.loc[mask, "מס' עסקאות"]
+    ).round(2)
     return df
 
 
@@ -727,11 +758,13 @@ def parse_pdf_portions(file_bytes: bytes, file_name: str, target_date: str) -> p
                     non_meal_qty = candidate
                     total_portions = non_meal_qty + total_meals
 
-            if store not in results or results[store]["total_portions"] < total_portions:
-                results[store] = {
-                    "total_portions": total_portions,
-                    "meals": total_meals,
-                }
+            # Accumulate: multiple PDF lines may map to the same master
+            # branch (e.g. "פלאפל זך" + "מתחם זך" both → רופין).
+            # Sum their portions rather than overwriting.
+            if store not in results:
+                results[store] = {"total_portions": 0, "meals": 0}
+            results[store]["total_portions"] += total_portions
+            results[store]["meals"] += total_meals
 
     rows = []
     for store, data in results.items():
