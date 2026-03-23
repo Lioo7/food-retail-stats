@@ -224,20 +224,28 @@ def parse_csv_revenue(file_bytes: bytes, file_name: str) -> pd.DataFrame:
                 f"Tried encodings: {tried}"
             )
 
-    # Find revenue column (כולל מע"מ)
+    # Find revenue column — MUST be column D ("בחירת מדד").
+    # Column E header misleadingly says "כולל מע"מ" but contains different data.
+    # Column D holds the actual gross revenue including VAT.
     rev_col = None
+
+    # Strategy 1: look for "בחירת מדד" by name
     for c in df.columns:
-        if "כולל מע" in str(c) and "מכיר" in str(c):
+        if "בחירת מדד" in str(c):
             rev_col = c
             break
-        if "כולל מע" in str(c):
-            rev_col = c
+
+    # Strategy 2: fall back to positional column D (index 3)
+    if rev_col is None and len(df.columns) >= 4:
+        rev_col = df.columns[3]
+
+    # Strategy 3: last resort — pick the first numeric column with "כולל מע"
     if rev_col is None:
-        # Try last numeric column
-        for c in reversed(df.columns):
-            if pd.api.types.is_numeric_dtype(df[c]):
+        for c in df.columns:
+            if "כולל מע" in str(c):
                 rev_col = c
                 break
+
     if rev_col is None:
         raise ValueError("לא נמצאה עמודת מכר כולל מע\"מ בקובץ CSV")
 
