@@ -1306,7 +1306,25 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     from openpyxl.chart.series import DataPoint
     from openpyxl.chart.label import DataLabelList
 
-    chart_base_row = shdr + 5
+    # Charts are laid out in a single vertical column with generous
+    # spacing so they never overlap — critical for Google Sheets compat.
+    # At default row height (~0.5 cm / ~15 px), a 14 cm chart needs
+    # ~28 rows.  We use CHART_GAP = 34 rows to be safe.
+    CHART_H   = 14          # cm – height for full-width bar charts
+    CHART_W   = 24          # cm – width for full-width bar charts
+    SMALL_H   = 12          # cm – height for smaller charts (pie)
+    SMALL_W   = 18          # cm – width for smaller charts (pie)
+    CHART_GAP = 34          # rows between chart anchors
+
+    from openpyxl.chart import PieChart
+    from openpyxl.chart.series import DataPoint
+    from openpyxl.chart.label import DataLabelList
+
+    # Helper data area starts far to the right (col 14+) so it's out
+    # of the visible table columns but still available as chart source.
+    HELPER_COL = 14
+
+    chart_row = shdr + 5  # first chart anchor row
 
     # ── Chart 1: Revenue by branch (horizontal bar) ──
     chart1 = BarChart()
@@ -1315,8 +1333,8 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     chart1.y_axis.title = None
     chart1.x_axis.title = None
     chart1.style = 26
-    chart1.width = 28
-    chart1.height = 16
+    chart1.width = CHART_W
+    chart1.height = CHART_H
     chart1.legend = None
 
     data_ref = Reference(ws2, min_col=3, min_row=hdr_row,
@@ -1326,61 +1344,58 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     chart1.add_data(data_ref, titles_from_data=True)
     chart1.set_categories(cats_ref)
     chart1.series[0].graphicalProperties.solidFill = "4472C4"
-    ws2.add_chart(chart1, f"A{chart_base_row}")
+    ws2.add_chart(chart1, f"A{chart_row}")
 
     # ── Chart 2: Paz vs Non-Paz pie chart ──
-    # Write a small helper table for the pie data (hidden area, cols K-L)
-    pie_data_row = chart_base_row
-    ws2.cell(row=pie_data_row, column=11, value="קבוצה")
-    ws2.cell(row=pie_data_row, column=12, value="מכר")
+    chart_row += CHART_GAP
+
+    # Helper data for pie
+    pie_data_row = chart_row
+    ws2.cell(row=pie_data_row, column=HELPER_COL, value="קבוצה")
+    ws2.cell(row=pie_data_row, column=HELPER_COL + 1, value="מכר")
     paz_rev = adf.loc[adf["_paz"], 'מכר כולל מע"מ'].sum()
     non_paz_rev = adf.loc[~adf["_paz"], 'מכר כולל מע"מ'].sum()
-    ws2.cell(row=pie_data_row + 1, column=11, value="סניפי רשת")
-    ws2.cell(row=pie_data_row + 1, column=12, value=non_paz_rev)
-    ws2.cell(row=pie_data_row + 2, column=11, value="סניפי פז")
-    ws2.cell(row=pie_data_row + 2, column=12, value=paz_rev)
+    ws2.cell(row=pie_data_row + 1, column=HELPER_COL, value="סניפי רשת")
+    ws2.cell(row=pie_data_row + 1, column=HELPER_COL + 1, value=non_paz_rev)
+    ws2.cell(row=pie_data_row + 2, column=HELPER_COL, value="סניפי פז")
+    ws2.cell(row=pie_data_row + 2, column=HELPER_COL + 1, value=paz_rev)
 
     pie = PieChart()
     pie.title = "פילוח מכר: רשת מול פז"
     pie.style = 26
-    pie.width = 14
-    pie.height = 12
+    pie.width = SMALL_W
+    pie.height = SMALL_H
 
-    pie_data = Reference(ws2, min_col=12, min_row=pie_data_row,
+    pie_data = Reference(ws2, min_col=HELPER_COL + 1, min_row=pie_data_row,
                          max_row=pie_data_row + 2)
-    pie_cats = Reference(ws2, min_col=11, min_row=pie_data_row + 1,
+    pie_cats = Reference(ws2, min_col=HELPER_COL, min_row=pie_data_row + 1,
                          max_row=pie_data_row + 2)
     pie.add_data(pie_data, titles_from_data=True)
     pie.set_categories(pie_cats)
 
-    # Color slices: blue for chain, orange for Paz
     slice_chain = DataPoint(idx=0)
     slice_chain.graphicalProperties.solidFill = "4472C4"
     slice_paz = DataPoint(idx=1)
     slice_paz.graphicalProperties.solidFill = "F2994A"
     pie.series[0].data_points = [slice_chain, slice_paz]
 
-    # Data labels with percentage
     pie.series[0].dLbls = DataLabelList()
     pie.series[0].dLbls.showPercent = True
     pie.series[0].dLbls.showCatName = True
     pie.series[0].dLbls.showVal = False
 
-    # Place pie to the right of chart 1
-    ws2.add_chart(pie, f"{get_column_letter(ncols + 2)}{chart_base_row}")
+    ws2.add_chart(pie, f"A{chart_row}")
 
     # ── Chart 3: Revenue per hour (efficiency) ──
-    chart3_row = chart_base_row + 18
+    chart_row += CHART_GAP
 
-    # Write helper table for rev/hour in hidden area (cols K-L)
-    rph_header_row = chart3_row
-    ws2.cell(row=rph_header_row, column=11, value="סניף")
-    ws2.cell(row=rph_header_row, column=12, value="מכר לשעה")
-    # Sort by rev/hour descending for this chart
+    rph_header_row = chart_row
+    ws2.cell(row=rph_header_row, column=HELPER_COL, value="סניף")
+    ws2.cell(row=rph_header_row, column=HELPER_COL + 1, value="מכר לשעה")
     rph_df = adf[adf["מכר לשעה"].notna()].sort_values("מכר לשעה", ascending=False)
     for ri, (_, row) in enumerate(rph_df.iterrows()):
-        ws2.cell(row=rph_header_row + 1 + ri, column=11, value=row["סניף"])
-        ws2.cell(row=rph_header_row + 1 + ri, column=12, value=row["מכר לשעה"])
+        ws2.cell(row=rph_header_row + 1 + ri, column=HELPER_COL, value=row["סניף"])
+        ws2.cell(row=rph_header_row + 1 + ri, column=HELPER_COL + 1, value=row["מכר לשעה"])
     rph_count = len(rph_df)
 
     chart3 = BarChart()
@@ -1389,24 +1404,25 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     chart3.y_axis.title = None
     chart3.x_axis.title = None
     chart3.style = 26
-    chart3.width = 28
-    chart3.height = 16
+    chart3.width = CHART_W
+    chart3.height = CHART_H
     chart3.legend = None
 
-    rph_data_ref = Reference(ws2, min_col=12, min_row=rph_header_row,
+    rph_data_ref = Reference(ws2, min_col=HELPER_COL + 1, min_row=rph_header_row,
                              max_row=rph_header_row + rph_count)
-    rph_cats_ref = Reference(ws2, min_col=11, min_row=rph_header_row + 1,
+    rph_cats_ref = Reference(ws2, min_col=HELPER_COL, min_row=rph_header_row + 1,
                              max_row=rph_header_row + rph_count)
     chart3.add_data(rph_data_ref, titles_from_data=True)
     chart3.set_categories(rph_cats_ref)
     chart3.series[0].graphicalProperties.solidFill = "11998E"
-    ws2.add_chart(chart3, f"A{chart3_row}")
+    ws2.add_chart(chart3, f"A{chart_row}")
 
     # ── Chart 4: Meal % of portions ──
-    # Write helper table (cols K-L)
-    meal_header_row = rph_header_row + rph_count + 3
-    ws2.cell(row=meal_header_row, column=11, value="סניף")
-    ws2.cell(row=meal_header_row, column=12, value="% ארוחות")
+    chart_row += CHART_GAP
+
+    meal_header_row = chart_row
+    ws2.cell(row=meal_header_row, column=HELPER_COL, value="סניף")
+    ws2.cell(row=meal_header_row, column=HELPER_COL + 1, value="% ארוחות")
     meal_df = adf[
         (adf["מנות בפיתה"].notna()) & (adf["מנות בפיתה"] > 0) &
         (adf["ארוחות בפיתה"].notna())
@@ -1414,9 +1430,9 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     meal_df["_meal_pct"] = meal_df["ארוחות בפיתה"] / meal_df["מנות בפיתה"]
     meal_df = meal_df.sort_values("_meal_pct", ascending=False)
     for ri, (_, row) in enumerate(meal_df.iterrows()):
-        ws2.cell(row=meal_header_row + 1 + ri, column=11, value=row["סניף"])
-        ws2.cell(row=meal_header_row + 1 + ri, column=12, value=row["_meal_pct"])
-        ws2.cell(row=meal_header_row + 1 + ri, column=12).number_format = "0.0%"
+        ws2.cell(row=meal_header_row + 1 + ri, column=HELPER_COL, value=row["סניף"])
+        ws2.cell(row=meal_header_row + 1 + ri, column=HELPER_COL + 1, value=row["_meal_pct"])
+        ws2.cell(row=meal_header_row + 1 + ri, column=HELPER_COL + 1).number_format = "0.0%"
     meal_count = len(meal_df)
 
     chart4 = BarChart()
@@ -1425,19 +1441,18 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
     chart4.y_axis.title = None
     chart4.x_axis.title = None
     chart4.style = 26
-    chart4.width = 14
-    chart4.height = 12
+    chart4.width = CHART_W
+    chart4.height = CHART_H
     chart4.legend = None
 
-    meal_data_ref = Reference(ws2, min_col=12, min_row=meal_header_row,
+    meal_data_ref = Reference(ws2, min_col=HELPER_COL + 1, min_row=meal_header_row,
                               max_row=meal_header_row + meal_count)
-    meal_cats_ref = Reference(ws2, min_col=11, min_row=meal_header_row + 1,
+    meal_cats_ref = Reference(ws2, min_col=HELPER_COL, min_row=meal_header_row + 1,
                               max_row=meal_header_row + meal_count)
     chart4.add_data(meal_data_ref, titles_from_data=True)
     chart4.set_categories(meal_cats_ref)
     chart4.series[0].graphicalProperties.solidFill = "F2C94C"
-    # Place to the right of chart 3
-    ws2.add_chart(chart4, f"{get_column_letter(ncols + 2)}{chart3_row}")
+    ws2.add_chart(chart4, f"A{chart_row}")
 
     # ── Column widths ──
     widths = [8, 16, 16, 12, 13, 13, 14, 14, 14]
@@ -1486,6 +1501,46 @@ def main():
         .metric-blue {
             background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
         }
+        .metric-card-big {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            color: white;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .metric-card-big h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
+            opacity: 0.9;
+        }
+        .metric-card-big h1 {
+            font-size: 2.8rem;
+            margin: 0;
+            font-weight: 700;
+        }
+        .section-header {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #2F5496;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+            border-bottom: 2px solid #4472C4;
+            padding-bottom: 0.4rem;
+        }
+        .group-card {
+            padding: 1rem;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #ddd;
+        }
+        .group-card h4 { font-size: 0.85rem; margin-bottom: 0.2rem; color: #555; }
+        .group-card h2 { font-size: 1.6rem; margin: 0.2rem 0; font-weight: 700; }
+        .group-card p  { font-size: 1.1rem; margin: 0; color: #666; }
+        .group-chain { border-color: #4472C4; background: #f0f5ff; }
+        .group-paz   { border-color: #F2994A; background: #fff8f0; }
+        .file-ok   { color: #28a745; }
+        .file-miss { color: #dc3545; }
         .stDownloadButton > button {
             width: 100%;
             background-color: #4CAF50 !important;
@@ -1535,6 +1590,9 @@ def main():
 
         if uploaded_files:
             st.success(f"✅ {len(uploaded_files)} קבצים הועלו")
+
+        # Placeholder for download button — filled after data is processed
+        sidebar_download_placeholder = st.empty()
 
     # ── Main area ──
     st.markdown(
@@ -1595,8 +1653,23 @@ def main():
         except Exception as e:
             st.error(f"❌ שגיאה בעיבוד {f.name}: {e}")
 
-    # Show file classification
-    with st.expander("🔍 זיהוי קבצים", expanded=False):
+    # Show file completeness checklist
+    _detected_types = set(file_classifications.values())
+    _required_files = [
+        ("csv_revenue", "CSV מכר כולל מע\"מ"),
+        ("xlsx_avg_trans", "Excel ממוצע עסקה"),
+        ("xlsx_portions", "Excel מנות בפיתה"),
+        ("xlsx_hourly", "Excel עסקאות לפי שעה"),
+    ]
+    _optional_files = [
+        ("pdf_sales", "PDF מכירות פז"),
+        ("pdf_portions", "PDF מנות פז"),
+    ]
+    _missing_required = [label for ftype, label in _required_files if ftype not in _detected_types]
+    if _missing_required:
+        st.warning("⚠️ **קבצים חסרים:** " + " · ".join(_missing_required))
+
+    with st.expander("🔍 זיהוי קבצים", expanded=bool(_missing_required)):
         type_labels = {
             "csv_revenue": "CSV מכר כולל מע\"מ",
             "xlsx_avg_trans": "Excel ממוצע עסקה",
@@ -1606,6 +1679,10 @@ def main():
             "pdf_portions": "PDF ארוחות בפיתה (פז)",
             "unknown": "❓ לא ידוע",
         }
+        for ftype, label in _required_files + _optional_files:
+            icon = "✅" if ftype in _detected_types else "❌"
+            st.markdown(f"{icon} {label}")
+        st.divider()
         for fname, ftype in file_classifications.items():
             st.write(f"**{fname}** → {type_labels.get(ftype, ftype)}")
 
@@ -1631,21 +1708,25 @@ def main():
     total_transactions = merged["מס' עסקאות"].sum()
     top_branch = merged.loc[merged['מכר כולל מע"מ'].idxmax(), "סניף"] if not merged['מכר כולל מע"מ'].isna().all() else "N/A"
     top_revenue = merged['מכר כולל מע"מ'].max()
+    num_active = len(merged[merged['מכר כולל מע"מ'] > 0])
 
+    # Row 1: Revenue as the visually dominant KPI
+    st.markdown(
+        f"""
+        <div class="metric-card-big">
+            <h3>מכר כולל יומי</h3>
+            <h1>₪{total_revenue:,.0f}</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Row 2: Secondary KPIs
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <h3>מכר כולל יומי</h3>
-                <h1>₪{total_revenue:,.0f}</h1>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with col2:
         st.markdown(
             f"""
             <div class="metric-card metric-green">
@@ -1656,7 +1737,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-    with col3:
+    with col2:
         st.markdown(
             f"""
             <div class="metric-card metric-orange">
@@ -1667,7 +1748,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-    with col4:
+    with col3:
         st.markdown(
             f"""
             <div class="metric-card metric-blue">
@@ -1679,10 +1760,172 @@ def main():
             unsafe_allow_html=True,
         )
 
+    with col4:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <h3>סניפים פעילים</h3>
+                <h1>{num_active}</h1>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Charts ──
-    tab1, tab2 = st.tabs(["📊 מכר לפי סניף", "🥙 מנות וארוחות"])
+    # ══════════════════════════════════════════════
+    # 📈 Analytics Section — mirrors Excel "ניתוח" sheet
+    # ══════════════════════════════════════════════
+    st.markdown('<div class="section-header">📈 ניתוח יומי</div>', unsafe_allow_html=True)
+
+    # ── Paz vs Non-Paz split (metric cards) ──
+    _paz_mask = merged["סניף"].isin(PAZ_BRANCHES)
+    paz_rev = merged.loc[_paz_mask, 'מכר כולל מע"מ'].sum()
+    non_paz_rev = merged.loc[~_paz_mask, 'מכר כולל מע"מ'].sum()
+    paz_pct = paz_rev / total_revenue * 100 if total_revenue > 0 else 0
+    non_paz_pct = non_paz_rev / total_revenue * 100 if total_revenue > 0 else 0
+    paz_count = _paz_mask.sum()
+    non_paz_count = (~_paz_mask).sum()
+
+    gcol1, gcol2 = st.columns(2)
+    with gcol1:
+        st.markdown(
+            f"""
+            <div class="group-card group-chain">
+                <h4>סניפי רשת ({non_paz_count})</h4>
+                <h2>₪{non_paz_rev:,.0f}</h2>
+                <p>{non_paz_pct:.1f}% מהמכר</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with gcol2:
+        st.markdown(
+            f"""
+            <div class="group-card group-paz">
+                <h4>סניפי פז ({paz_count})</h4>
+                <h2>₪{paz_rev:,.0f}</h2>
+                <p>{paz_pct:.1f}% מהמכר</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Branch ranking table ──
+    st.markdown("**דירוג סניפים לפי מכר**")
+
+    ranking_df = merged.copy()
+    ranking_df = ranking_df.sort_values('מכר כולל מע"מ', ascending=False).reset_index(drop=True)
+
+    # Compute derived columns
+    ranking_df["דירוג"] = range(1, len(ranking_df) + 1)
+    ranking_df["% מהמכר"] = ranking_df['מכר כולל מע"מ'] / total_revenue if total_revenue > 0 else 0
+
+    def _calc_hours(row):
+        f = row.get("עסקה ראשונה")
+        l = row.get("עסקה אחרונה")
+        if isinstance(f, datetime.time) and isinstance(l, datetime.time):
+            f_min = f.hour * 60 + f.minute
+            l_min = l.hour * 60 + l.minute
+            diff = l_min - f_min
+            return round(diff / 60, 1) if diff > 0 else None
+        return None
+
+    ranking_df["שעות פעילות"] = ranking_df.apply(_calc_hours, axis=1)
+    ranking_df["מכר לשעה"] = ranking_df.apply(
+        lambda r: round(r['מכר כולל מע"מ'] / r["שעות פעילות"])
+        if r["שעות פעילות"] and r["שעות פעילות"] > 0 else None,
+        axis=1,
+    )
+
+    # Build display version
+    rank_display = ranking_df[["דירוג", "סניף", 'מכר כולל מע"מ', "% מהמכר",
+                                "מס' עסקאות", "שעות פעילות", "מכר לשעה",
+                                "מנות בפיתה", "ארוחות בפיתה"]].copy()
+
+    n_branches = len(rank_display)
+
+    def _highlight_rank(row):
+        rank = row["דירוג"]
+        if rank <= 3:
+            return ["background-color: #FFF2CC"] * len(row)
+        elif rank > n_branches - 3:
+            return ["background-color: #FCE4EC"] * len(row)
+        return [""] * len(row)
+
+    styled_ranking = rank_display.style.apply(_highlight_rank, axis=1).format({
+        'מכר כולל מע"מ': "₪{:,.0f}",
+        "% מהמכר": "{:.1%}",
+        "מס' עסקאות": lambda x: f"{int(x)}" if pd.notna(x) else "",
+        "שעות פעילות": lambda x: f"{x:.1f}" if pd.notna(x) else "",
+        "מכר לשעה": lambda x: f"₪{x:,.0f}" if pd.notna(x) else "",
+        "מנות בפיתה": lambda x: f"{int(x)}" if pd.notna(x) else "",
+        "ארוחות בפיתה": lambda x: f"{int(x)}" if pd.notna(x) else "",
+    })
+
+    st.dataframe(
+        styled_ranking,
+        use_container_width=True,
+        hide_index=True,
+        height=min(40 * n_branches + 60, 600),
+    )
+
+    # ── Paz vs Non-Paz summary table ──
+    st.markdown("**סיכום: רשת מול פז**")
+
+    paz_trans = merged.loc[_paz_mask, "מס' עסקאות"].sum()
+    non_paz_trans = merged.loc[~_paz_mask, "מס' עסקאות"].sum()
+
+    summary_rows = [
+        {
+            "קבוצה": "סניפי רשת",
+            "סניפים": int(non_paz_count),
+            'מכר כולל מע"מ': non_paz_rev,
+            "% מהמכר": non_paz_pct / 100,
+            "מס' עסקאות": int(non_paz_trans),
+            "ממוצע מכר לסניף": round(non_paz_rev / non_paz_count) if non_paz_count > 0 else 0,
+        },
+        {
+            "קבוצה": "סניפי פז",
+            "סניפים": int(paz_count),
+            'מכר כולל מע"מ': paz_rev,
+            "% מהמכר": paz_pct / 100,
+            "מס' עסקאות": int(paz_trans),
+            "ממוצע מכר לסניף": round(paz_rev / paz_count) if paz_count > 0 else 0,
+        },
+        {
+            "קבוצה": 'סה"כ',
+            "סניפים": int(non_paz_count + paz_count),
+            'מכר כולל מע"מ': total_revenue,
+            "% מהמכר": 1.0,
+            "מס' עסקאות": int(non_paz_trans + paz_trans),
+            "ממוצע מכר לסניף": round(total_revenue / (non_paz_count + paz_count)) if (non_paz_count + paz_count) > 0 else 0,
+        },
+    ]
+    summary_df = pd.DataFrame(summary_rows)
+
+    st.dataframe(
+        summary_df.style.format({
+            'מכר כולל מע"מ': "₪{:,.0f}",
+            "% מהמכר": "{:.1%}",
+            "מס' עסקאות": "{:,.0f}",
+            "ממוצע מכר לסניף": "₪{:,.0f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Charts (expanded from 2 to 4 tabs) ──
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 מכר לפי סניף",
+        "⏱️ מכר לשעת פעילות",
+        "🥙 מנות וארוחות",
+        "📈 אחוז ארוחות",
+    ])
 
     with tab1:
         chart_df = merged[["סניף", 'מכר כולל מע"מ']].copy()
@@ -1694,6 +1937,19 @@ def main():
         )
 
     with tab2:
+        rph_chart = ranking_df[["סניף", "מכר לשעה"]].copy()
+        rph_chart = rph_chart.dropna(subset=["מכר לשעה"])
+        rph_chart = rph_chart.sort_values("מכר לשעה", ascending=True)
+        if not rph_chart.empty:
+            st.bar_chart(
+                rph_chart.set_index("סניף")["מכר לשעה"],
+                horizontal=True,
+                use_container_width=True,
+            )
+        else:
+            st.info("אין נתוני שעות פעילות לחישוב מכר לשעה.")
+
+    with tab3:
         portions_chart = merged[["סניף", "מנות בפיתה", "ארוחות בפיתה"]].copy()
         portions_chart = portions_chart.dropna(subset=["מנות בפיתה"])
         portions_chart = portions_chart.sort_values("מנות בפיתה", ascending=True)
@@ -1702,6 +1958,20 @@ def main():
             horizontal=True,
             use_container_width=True,
         )
+
+    with tab4:
+        meal_chart = ranking_df[["סניף", "מנות בפיתה", "ארוחות בפיתה"]].copy()
+        meal_chart = meal_chart[(meal_chart["מנות בפיתה"].notna()) & (meal_chart["מנות בפיתה"] > 0)]
+        meal_chart["אחוז ארוחות"] = meal_chart["ארוחות בפיתה"] / meal_chart["מנות בפיתה"]
+        meal_chart = meal_chart.sort_values("אחוז ארוחות", ascending=True)
+        if not meal_chart.empty:
+            st.bar_chart(
+                meal_chart.set_index("סניף")["אחוז ארוחות"],
+                horizontal=True,
+                use_container_width=True,
+            )
+        else:
+            st.info("אין נתוני מנות לחישוב אחוז ארוחות.")
 
     # ── Data Table ──
     st.markdown("---")
@@ -1740,21 +2010,32 @@ def main():
         hide_index=True,
     )
 
-    # ── Download Button ──
+    # ── Download Button (both in sidebar and main area) ──
     st.markdown("---")
 
     excel_bytes = generate_excel(merged, report_date)
 
-    # Use pathlib-safe separators for the suggested download filename.
-    # Dots are safe on both Windows and macOS; slashes are avoided.
     date_str = report_date.strftime("%d.%m.%y")
     file_name = f"דוח_יומי_{date_str}.xlsx"
 
+    # Sidebar download — always visible
+    with sidebar_download_placeholder:
+        st.divider()
+        st.download_button(
+            label=f"⬇️ הורד דוח יומי - {report_date.strftime('%d/%m/%Y')}",
+            data=excel_bytes,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="sidebar_download",
+        )
+
+    # Main area download too (for discoverability)
     st.download_button(
         label=f"⬇️ הורד דוח יומי - {report_date.strftime('%d/%m/%Y')}",
         data=excel_bytes,
         file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="main_download",
     )
 
     # ── Raw data expander ──
