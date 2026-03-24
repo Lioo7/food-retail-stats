@@ -895,116 +895,191 @@ def merge_all(
 # Excel export
 # ──────────────────────────────────────────────
 def generate_excel(df: pd.DataFrame, report_date: datetime.date) -> bytes:
-    """Generate a formatted Excel file matching the master file format.
+    """Generate a professionally formatted Excel report.
 
-    Uses only in-memory io.BytesIO – no filesystem paths involved –
-    so this works identically on Windows and macOS.
+    Layout (compact, no wasted rows):
+      Row 1 : Title bar — date + report name, merged across all columns
+      Row 2 : Column headers (blue background, white bold text)
+      Row 3…: Data rows (alternating zebra stripes)
+      Last  : Totals row (bold, light-blue background)
+
+    Uses only in-memory io.BytesIO — works identically on Windows and macOS.
     """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, numbers
+    from openpyxl.utils import get_column_letter
+
     output = io.BytesIO()
+    wb = Workbook()
+    ws = wb.active
 
-    # Sheet name: DD.M format (like "20.1")
-    sheet_name = f"{report_date.day}.{report_date.month}"
+    # Sheet name: DD.M format (like "15.2")
+    ws.title = f"{report_date.day}.{report_date.month}"
 
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        # Prepare data for export
-        export_df = df.copy()
+    # ── Styles ──
+    thin_border = Border(
+        left=Side(style="thin", color="B0B0B0"),
+        right=Side(style="thin", color="B0B0B0"),
+        top=Side(style="thin", color="B0B0B0"),
+        bottom=Side(style="thin", color="B0B0B0"),
+    )
+    title_font = Font(bold=True, size=14, color="FFFFFF")
+    title_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
+    header_font = Font(bold=True, size=11, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    data_font = Font(size=11)
+    branch_font = Font(size=11, bold=True)
+    totals_font = Font(bold=True, size=11, color="1F3864")
+    totals_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    stripe_fill = PatternFill(start_color="F2F7FC", end_color="F2F7FC", fill_type="solid")
+    center = Alignment(horizontal="center", vertical="center")
+    right_align = Alignment(horizontal="right", vertical="center")
 
-        # Format time columns as strings
-        for col in ["עסקה ראשונה", "עסקה אחרונה"]:
-            export_df[col] = export_df[col].apply(
-                lambda x: x.strftime("%H:%M") if isinstance(x, datetime.time) else (str(x) if pd.notna(x) else "")
+    num_cols = len(MASTER_COLUMNS)
+
+    # ── Row 1: Title bar (merged) ──
+    date_str = report_date.strftime("%d.%m.%Y")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=num_cols)
+    title_cell = ws.cell(row=1, column=1)
+    title_cell.value = f"דוח מכירות יומי — {date_str}"
+    title_cell.font = title_font
+    title_cell.fill = title_fill
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    title_cell.border = thin_border
+    ws.row_dimensions[1].height = 32
+
+    # Fill the rest of the merged row so the border/fill extends visually
+    for ci in range(2, num_cols + 1):
+        c = ws.cell(row=1, column=ci)
+        c.fill = title_fill
+        c.border = thin_border
+
+    # ── Row 2: Column headers ──
+    ws.row_dimensions[2].height = 28
+    for ci, col_name in enumerate(MASTER_COLUMNS, start=1):
+        cell = ws.cell(row=2, column=ci, value=col_name)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center
+        cell.border = thin_border
+
+    # ── Prepare export data ──
+    export_df = df.copy()
+
+    # Format time columns as HH:MM strings
+    for col in ["עסקה ראשונה", "עסקה אחרונה"]:
+        export_df[col] = export_df[col].apply(
+            lambda x: x.strftime("%H:%M") if isinstance(x, datetime.time) else (
+                str(x) if pd.notna(x) else ""
             )
-
-        # Add totals row
-        totals = {
-            "סניף": 'סה"כ',
-            'מכר כולל מע"מ': export_df['מכר כולל מע"מ'].sum(),
-            "ממוצע עסקאות": None,
-            "מס' עסקאות": export_df["מס' עסקאות"].sum()
-            if "מס' עסקאות" in export_df.columns
-            else None,
-            "עסקה ראשונה": None,
-            "עסקה אחרונה": None,
-            "מנות בפיתה": export_df["מנות בפיתה"].sum(),
-            "ארוחות בפיתה": export_df["ארוחות בפיתה"].sum(),
-        }
-        total_portions = totals["מנות בפיתה"] or 0
-        total_meals = totals["ארוחות בפיתה"] or 0
-        totals["אחוז ארוחות מתוך מנות"] = (
-            total_meals / total_portions if total_portions > 0 else 0
         )
 
-        export_df = pd.concat(
-            [export_df, pd.DataFrame([totals])], ignore_index=True
-        )
+    # ── Rows 3…N: Data ──
+    data_start_row = 3
+    for ri, (_, row) in enumerate(export_df.iterrows()):
+        excel_row = data_start_row + ri
+        is_stripe = ri % 2 == 1  # alternate rows
 
-        # Write header date row
-        export_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=3)
-
-        wb = writer.book
-        ws = writer.sheets[sheet_name]
-
-        # Write date in A1
-        date_str = report_date.strftime("%d.%m.%y")
-        ws["A1"] = date_str
-
-        # Style the header
-        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
-        header_font = Font(bold=True, size=11)
-        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        header_font_white = Font(bold=True, size=11, color="FFFFFF")
-        thin_border = Border(
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin"),
-        )
-
-        # Format header row (row 4)
-        for col_idx in range(1, len(MASTER_COLUMNS) + 1):
-            cell = ws.cell(row=4, column=col_idx)
-            cell.font = header_font_white
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for ci, col_name in enumerate(MASTER_COLUMNS, start=1):
+            val = row.get(col_name)
+            cell = ws.cell(row=excel_row, column=ci)
             cell.border = thin_border
 
-        # Format data rows
-        for row_idx in range(5, 5 + len(export_df)):
-            for col_idx in range(1, len(MASTER_COLUMNS) + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.border = thin_border
-                cell.alignment = Alignment(horizontal="center", vertical="center")
+            if pd.isna(val):
+                cell.value = None
+            else:
+                cell.value = val
 
-                # Number formatting
-                col_name = MASTER_COLUMNS[col_idx - 1]
-                if col_name == 'מכר כולל מע"מ':
-                    cell.number_format = "#,##0"
-                elif col_name == "ממוצע עסקאות":
-                    cell.number_format = "#,##0.00"
-                elif col_name == "אחוז ארוחות מתוך מנות":
-                    cell.number_format = "0.00%"
-                elif col_name in ("מנות בפיתה", "ארוחות בפיתה", "מס' עסקאות"):
-                    cell.number_format = "#,##0"
+            # Styling per column
+            if col_name == "סניף":
+                cell.font = branch_font
+                cell.alignment = right_align
+            elif col_name == 'מכר כולל מע"מ':
+                cell.number_format = "#,##0"
+                cell.font = data_font
+                cell.alignment = center
+            elif col_name == "ממוצע עסקאות":
+                cell.number_format = "#,##0.00"
+                cell.font = data_font
+                cell.alignment = center
+            elif col_name == "אחוז ארוחות מתוך מנות":
+                cell.number_format = "0.00%"
+                cell.font = data_font
+                cell.alignment = center
+            elif col_name in ("מנות בפיתה", "ארוחות בפיתה", "מס' עסקאות"):
+                cell.number_format = "#,##0"
+                cell.font = data_font
+                cell.alignment = center
+            else:
+                cell.font = data_font
+                cell.alignment = center
 
-        # Bold the totals row
-        totals_row = 4 + len(export_df)
-        for col_idx in range(1, len(MASTER_COLUMNS) + 1):
-            cell = ws.cell(row=totals_row, column=col_idx)
-            cell.font = Font(bold=True, size=11)
-            fill_color = "D9E2F3"
-            cell.fill = PatternFill(
-                start_color=fill_color, end_color=fill_color, fill_type="solid"
-            )
+            # Zebra stripe
+            if is_stripe:
+                cell.fill = stripe_fill
 
-        # Set column widths
-        col_widths = [14, 16, 14, 12, 14, 14, 14, 14, 20]
-        for i, w in enumerate(col_widths):
-            ws.column_dimensions[chr(65 + i)].width = w
+    # ── Totals row ──
+    totals_row_idx = data_start_row + len(export_df)
+    totals_values = {
+        "סניף": 'סה"כ',
+        'מכר כולל מע"מ': df['מכר כולל מע"מ'].sum(),
+        "ממוצע עסקאות": None,
+        "מס' עסקאות": df["מס' עסקאות"].sum() if "מס' עסקאות" in df.columns else None,
+        "עסקה ראשונה": None,
+        "עסקה אחרונה": None,
+        "מנות בפיתה": df["מנות בפיתה"].sum(),
+        "ארוחות בפיתה": df["ארוחות בפיתה"].sum(),
+    }
+    total_p = totals_values["מנות בפיתה"] or 0
+    total_m = totals_values["ארוחות בפיתה"] or 0
+    totals_values["אחוז ארוחות מתוך מנות"] = total_m / total_p if total_p > 0 else 0
 
-        # Set RTL for the sheet
-        ws.sheet_view.rightToLeft = True
+    for ci, col_name in enumerate(MASTER_COLUMNS, start=1):
+        cell = ws.cell(row=totals_row_idx, column=ci, value=totals_values.get(col_name))
+        cell.font = totals_font
+        cell.fill = totals_fill
+        cell.alignment = center
+        cell.border = Border(
+            left=Side(style="thin", color="B0B0B0"),
+            right=Side(style="thin", color="B0B0B0"),
+            top=Side(style="medium", color="4472C4"),
+            bottom=Side(style="medium", color="4472C4"),
+        )
+        # Number formatting for totals
+        if col_name == 'מכר כולל מע"מ':
+            cell.number_format = "#,##0"
+        elif col_name == "אחוז ארוחות מתוך מנות":
+            cell.number_format = "0.00%"
+        elif col_name in ("מנות בפיתה", "ארוחות בפיתה", "מס' עסקאות"):
+            cell.number_format = "#,##0"
 
+    # ── Column widths (generous for Hebrew text) ──
+    col_widths = {
+        "סניף": 16,
+        'מכר כולל מע"מ': 16,
+        "ממוצע עסקאות": 15,
+        "מס' עסקאות": 13,
+        "עסקה ראשונה": 15,
+        "עסקה אחרונה": 15,
+        "מנות בפיתה": 14,
+        "ארוחות בפיתה": 15,
+        "אחוז ארוחות מתוך מנות": 22,
+    }
+    for ci, col_name in enumerate(MASTER_COLUMNS, start=1):
+        letter = get_column_letter(ci)
+        ws.column_dimensions[letter].width = col_widths.get(col_name, 14)
+
+    # ── Freeze panes: keep title + headers visible when scrolling ──
+    ws.freeze_panes = "A3"
+
+    # ── RTL sheet direction ──
+    ws.sheet_view.rightToLeft = True
+
+    # ── Print settings (nice printout) ──
+    ws.print_title_rows = "1:2"  # repeat title+headers on every printed page
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    wb.save(output)
     return output.getvalue()
 
 
