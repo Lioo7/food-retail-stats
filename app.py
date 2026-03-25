@@ -1466,87 +1466,75 @@ def _build_analysis_sheet(wb, df: pd.DataFrame, report_date: datetime.date, data
 # Main Streamlit App
 # ──────────────────────────────────────────────
 def main():
-    # Custom CSS
+    # ── Theme-aware CSS ──
+    # All colors use rgba or theme-safe values so they work in both
+    # Streamlit light mode and dark mode.
     st.markdown(
         """
         <style>
-        .main-header {
+        /* ── KPI Cards ── */
+        .kpi-hero {
+            background: linear-gradient(135deg, #4472C4 0%, #2F5496 100%);
+            padding: 1.6rem 1rem;
+            border-radius: 14px;
+            color: #ffffff;
             text-align: center;
-            padding: 0.5rem 0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
         }
-        .metric-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 1.2rem;
-            border-radius: 12px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        .metric-card h3 {
-            font-size: 0.9rem;
-            margin-bottom: 0.3rem;
-            opacity: 0.9;
-        }
-        .metric-card h1 {
-            font-size: 2rem;
-            margin: 0;
-            font-weight: 700;
-        }
-        .metric-green {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        }
-        .metric-orange {
-            background: linear-gradient(135deg, #F2994A 0%, #F2C94C 100%);
-        }
-        .metric-blue {
-            background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
-        }
-        .metric-card-big {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        .metric-card-big h3 {
-            font-size: 1.1rem;
-            margin-bottom: 0.3rem;
-            opacity: 0.9;
-        }
-        .metric-card-big h1 {
-            font-size: 2.8rem;
-            margin: 0;
-            font-weight: 700;
-        }
-        .section-header {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #2F5496;
-            margin-top: 1.5rem;
-            margin-bottom: 0.5rem;
-            border-bottom: 2px solid #4472C4;
-            padding-bottom: 0.4rem;
-        }
-        .group-card {
+        .kpi-hero h3 { font-size: 1rem; margin: 0 0 0.3rem 0; opacity: 0.9; }
+        .kpi-hero h1 { font-size: 2.8rem; margin: 0; font-weight: 800; }
+        .kpi-card {
             padding: 1rem;
-            border-radius: 10px;
+            border-radius: 12px;
+            color: #ffffff;
             text-align: center;
-            border: 2px solid #ddd;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.15);
         }
-        .group-card h4 { font-size: 0.85rem; margin-bottom: 0.2rem; color: #555; }
-        .group-card h2 { font-size: 1.6rem; margin: 0.2rem 0; font-weight: 700; }
-        .group-card p  { font-size: 1.1rem; margin: 0; color: #666; }
-        .group-chain { border-color: #4472C4; background: #f0f5ff; }
-        .group-paz   { border-color: #F2994A; background: #fff8f0; }
-        .file-ok   { color: #28a745; }
-        .file-miss { color: #dc3545; }
+        .kpi-card h3 { font-size: 0.85rem; margin: 0 0 0.2rem 0; opacity: 0.9; }
+        .kpi-card h1 { font-size: 1.8rem; margin: 0; font-weight: 700; }
+        .kpi-card p  { font-size: 0.85rem; margin: 0.2rem 0 0 0; opacity: 0.85; }
+        .kpi-green  { background: linear-gradient(135deg, #0d9373 0%, #2ab77b 100%); }
+        .kpi-orange { background: linear-gradient(135deg, #e0842b 0%, #e8b32a 100%); }
+        .kpi-blue   { background: linear-gradient(135deg, #1e87a0 0%, #5bbfd4 100%); }
+        .kpi-purple { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+
+        /* ── Section Headers ── */
+        .section-hdr {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin: 1.5rem 0 0.6rem 0;
+            padding-bottom: 0.4rem;
+            border-bottom: 3px solid #4472C4;
+        }
+
+        /* ── Group split cards (Paz vs Chain) ── */
+        .grp-card {
+            padding: 1.2rem 0.8rem;
+            border-radius: 12px;
+            text-align: center;
+            border: 2px solid;
+        }
+        .grp-card h4 { font-size: 0.9rem; margin: 0 0 0.2rem 0; opacity: 0.7; }
+        .grp-card h2 { font-size: 1.8rem; margin: 0.2rem 0; font-weight: 700; }
+        .grp-card p  { font-size: 1rem; margin: 0; opacity: 0.7; }
+        .grp-chain {
+            border-color: #4472C4;
+            background: rgba(68,114,196,0.12);
+            color: inherit;
+        }
+        .grp-paz {
+            border-color: #F2994A;
+            background: rgba(242,153,74,0.12);
+            color: inherit;
+        }
+
+        /* ── Download Button ── */
         .stDownloadButton > button {
             width: 100%;
             background-color: #4CAF50 !important;
             color: white !important;
-            font-size: 1.3rem !important;
-            padding: 0.8rem !important;
+            font-size: 1.2rem !important;
+            padding: 0.7rem !important;
             border-radius: 10px !important;
             border: none !important;
             font-weight: bold !important;
@@ -1561,17 +1549,9 @@ def main():
 
     # ── Sidebar ──
     with st.sidebar:
-        st.image(
-            "https://img.icons8.com/color/96/falafel-in-pita.png",
-            width=80,
-        )
-        st.title("פלאפל בריבוע")
+        st.markdown("## 🧆 פלאפל בריבוע")
         st.caption("דוח מכירות יומי")
         st.divider()
-
-        # Platform info (useful for debugging encoding on Windows vs Mac)
-        _platform = "🪟 Windows" if os.name == "nt" else "🍎 macOS / Linux"
-        st.caption(f"מערכת הפעלה: {_platform}")
 
         report_date = st.date_input(
             "📅 תאריך הדוח",
@@ -1582,10 +1562,15 @@ def main():
         st.divider()
 
         uploaded_files = st.file_uploader(
-            "📁 העלאת קבצים",
+            "📁 העלאת קבצים (7)",
             type=["csv", "xlsx", "xls", "pdf"],
             accept_multiple_files=True,
-            help="העלה את כל קבצי היום: CSV, Excel ו-PDF",
+            help=(
+                "העלה את כל 7 קבצי היום:\n"
+                "• CSV מכר כולל מע\"מ\n"
+                "• 3 קבצי Excel (ממוצע עסקה, מנות, שעות)\n"
+                "• 3 קבצי PDF (מכירות פז + מנות פז)"
+            ),
         )
 
         if uploaded_files:
@@ -1594,22 +1579,24 @@ def main():
         # Placeholder for download button — filled after data is processed
         sidebar_download_placeholder = st.empty()
 
+        # Platform info at the very bottom
+        st.divider()
+        _platform = "🪟 Windows" if os.name == "nt" else "🍎 macOS / Linux"
+        st.caption(f"מערכת הפעלה: {_platform}")
+
     # ── Main area ──
-    st.markdown(
-        "<h1 class='main-header'>📊 דוח מכירות יומי - פלאפל בריבוע</h1>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("## 📊 דוח מכירות יומי — פלאפל בריבוע")
 
     if not uploaded_files:
         st.info(
             "👈 העלה קבצים בסרגל הצד כדי להתחיל.\n\n"
-            "**קבצים נדרשים:**\n"
+            "**קבצים נדרשים (7):**\n"
             "- 🟢 CSV מכר כולל מע\"מ\n"
             "- 🟢 Excel ממוצע עסקה + מס' עסקאות\n"
             "- 🟢 Excel סה\"כ מנות מול ארוחה בפיתה\n"
             "- 🟢 Excel עסקאות לפי שעה\n"
-            "- 🟠 PDF מכירות חנות (סניפי פז)\n"
-            "- 🟠 PDF ארוחות בפיתה (סניפי פז)"
+            "- 🟠 PDF מכירות חנות — פז (1-2 קבצים)\n"
+            "- 🟠 PDF ארוחות בפיתה — פז"
         )
         return
 
@@ -1655,31 +1642,31 @@ def main():
 
     # Show file completeness checklist
     _detected_types = set(file_classifications.values())
-    _required_files = [
+    _pdf_sales_count = sum(1 for v in file_classifications.values() if v == "pdf_sales")
+    _checklist = [
         ("csv_revenue", "CSV מכר כולל מע\"מ"),
         ("xlsx_avg_trans", "Excel ממוצע עסקה"),
         ("xlsx_portions", "Excel מנות בפיתה"),
         ("xlsx_hourly", "Excel עסקאות לפי שעה"),
-    ]
-    _optional_files = [
-        ("pdf_sales", "PDF מכירות פז"),
+        ("pdf_sales", f"PDF מכירות פז ({_pdf_sales_count} קבצים)"),
         ("pdf_portions", "PDF מנות פז"),
     ]
-    _missing_required = [label for ftype, label in _required_files if ftype not in _detected_types]
-    if _missing_required:
-        st.warning("⚠️ **קבצים חסרים:** " + " · ".join(_missing_required))
+    _missing = [label for ftype, label in _checklist if ftype not in _detected_types]
+    if _missing:
+        st.warning("⚠️ **קבצים חסרים:** " + " · ".join(_missing))
 
-    with st.expander("🔍 זיהוי קבצים", expanded=bool(_missing_required)):
-        type_labels = {
-            "csv_revenue": "CSV מכר כולל מע\"מ",
-            "xlsx_avg_trans": "Excel ממוצע עסקה",
-            "xlsx_portions": "Excel מנות בפיתה",
-            "xlsx_hourly": "Excel עסקאות לפי שעה",
-            "pdf_sales": "PDF מכירות חנות (פז)",
-            "pdf_portions": "PDF ארוחות בפיתה (פז)",
-            "unknown": "❓ לא ידוע",
-        }
-        for ftype, label in _required_files + _optional_files:
+    type_labels = {
+        "csv_revenue": "CSV מכר כולל מע\"מ",
+        "xlsx_avg_trans": "Excel ממוצע עסקה",
+        "xlsx_portions": "Excel מנות בפיתה",
+        "xlsx_hourly": "Excel עסקאות לפי שעה",
+        "pdf_sales": "PDF מכירות חנות (פז)",
+        "pdf_portions": "PDF ארוחות בפיתה (פז)",
+        "unknown": "❓ לא ידוע",
+    }
+
+    with st.expander("🔍 זיהוי קבצים", expanded=bool(_missing)):
+        for ftype, label in _checklist:
             icon = "✅" if ftype in _detected_types else "❌"
             st.markdown(f"{icon} {label}")
         st.divider()
@@ -1710,14 +1697,9 @@ def main():
     top_revenue = merged['מכר כולל מע"מ'].max()
     num_active = len(merged[merged['מכר כולל מע"מ'] > 0])
 
-    # Row 1: Revenue as the visually dominant KPI
+    # Row 1: Revenue — the hero metric
     st.markdown(
-        f"""
-        <div class="metric-card-big">
-            <h3>מכר כולל יומי</h3>
-            <h1>₪{total_revenue:,.0f}</h1>
-        </div>
-        """,
+        f'<div class="kpi-hero"><h3>מכר כולל יומי</h3><h1>₪{total_revenue:,.0f}</h1></div>',
         unsafe_allow_html=True,
     )
 
@@ -1725,49 +1707,26 @@ def main():
 
     # Row 2: Secondary KPIs
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
         st.markdown(
-            f"""
-            <div class="metric-card metric-green">
-                <h3>סה"כ מנות</h3>
-                <h1>{total_portions:,.0f}</h1>
-            </div>
-            """,
+            f'<div class="kpi-card kpi-green"><h3>סה"כ עסקאות</h3><h1>{total_transactions:,.0f}</h1></div>',
             unsafe_allow_html=True,
         )
-
     with col2:
         st.markdown(
-            f"""
-            <div class="metric-card metric-orange">
-                <h3>סה"כ עסקאות</h3>
-                <h1>{total_transactions:,.0f}</h1>
-            </div>
-            """,
+            f'<div class="kpi-card kpi-orange"><h3>סה"כ מנות</h3><h1>{total_portions:,.0f}</h1></div>',
             unsafe_allow_html=True,
         )
-
     with col3:
         st.markdown(
-            f"""
-            <div class="metric-card metric-blue">
-                <h3>סניף מוביל</h3>
-                <h1 style="font-size:1.4rem">{top_branch}</h1>
-                <p style="margin:0;opacity:0.8">₪{top_revenue:,.0f}</p>
-            </div>
-            """,
+            f'<div class="kpi-card kpi-blue"><h3>סניף מוביל</h3>'
+            f'<h1 style="font-size:1.3rem">{top_branch}</h1>'
+            f'<p>₪{top_revenue:,.0f}</p></div>',
             unsafe_allow_html=True,
         )
-
     with col4:
         st.markdown(
-            f"""
-            <div class="metric-card">
-                <h3>סניפים פעילים</h3>
-                <h1>{num_active}</h1>
-            </div>
-            """,
+            f'<div class="kpi-card kpi-purple"><h3>סניפים פעילים</h3><h1>{num_active}</h1></div>',
             unsafe_allow_html=True,
         )
 
@@ -1776,7 +1735,7 @@ def main():
     # ══════════════════════════════════════════════
     # 📈 Analytics Section — mirrors Excel "ניתוח" sheet
     # ══════════════════════════════════════════════
-    st.markdown('<div class="section-header">📈 ניתוח יומי</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">📈 ניתוח יומי</div>', unsafe_allow_html=True)
 
     # ── Paz vs Non-Paz split (metric cards) ──
     _paz_mask = merged["סניף"].isin(PAZ_BRANCHES)
@@ -1790,24 +1749,18 @@ def main():
     gcol1, gcol2 = st.columns(2)
     with gcol1:
         st.markdown(
-            f"""
-            <div class="group-card group-chain">
-                <h4>סניפי רשת ({non_paz_count})</h4>
-                <h2>₪{non_paz_rev:,.0f}</h2>
-                <p>{non_paz_pct:.1f}% מהמכר</p>
-            </div>
-            """,
+            f'<div class="grp-card grp-chain">'
+            f'<h4>סניפי רשת ({non_paz_count})</h4>'
+            f'<h2>₪{non_paz_rev:,.0f}</h2>'
+            f'<p>{non_paz_pct:.1f}% מהמכר</p></div>',
             unsafe_allow_html=True,
         )
     with gcol2:
         st.markdown(
-            f"""
-            <div class="group-card group-paz">
-                <h4>סניפי פז ({paz_count})</h4>
-                <h2>₪{paz_rev:,.0f}</h2>
-                <p>{paz_pct:.1f}% מהמכר</p>
-            </div>
-            """,
+            f'<div class="grp-card grp-paz">'
+            f'<h4>סניפי פז ({paz_count})</h4>'
+            f'<h2>₪{paz_rev:,.0f}</h2>'
+            f'<p>{paz_pct:.1f}% מהמכר</p></div>',
             unsafe_allow_html=True,
         )
 

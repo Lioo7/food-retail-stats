@@ -1,0 +1,25 @@
+# System files
+.DS_Store
+__pycache__/
+*.pyc
+
+# Automation scripts
+run.bat
+run.command
+
+# Data files (Excel, PDF, CSV, etc.)
+*.xlsx
+*.xls
+*.xlsm
+*.pdf
+*.csv
+*.parquet
+*.db
+*.sqlite
+
+# Specific data folders/files - do not commit
+מכר יומי קבצי מקור- 15.2.26
+מכר יומי קבצי מקור-*/
+
+# Virtual Environment
+venv/
