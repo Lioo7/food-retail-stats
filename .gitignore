@@ -21,6 +21,9 @@ run.command
 מכר יומי קבצי מקור- 15.2.26
 מכר יומי קבצי מקור-*/
 
+# Streamlit secrets (password, API keys)
+.streamlit/secrets.toml
+
 # Virtual Environment
 venv/
 

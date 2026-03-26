@@ -26,6 +26,7 @@ A single non-technical business owner who operates 24 branches. He runs the app 
 - Downloadable 2-sheet Excel report with professional formatting and embedded charts
 - Works in both light and dark mode
 - Cross-platform: runs on both Windows and macOS
+- Optional password protection for cloud deployments
 
 ## Quick Start
 
@@ -52,6 +53,21 @@ source venv/bin/activate        # macOS/Linux
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
+
+## Password Protection (Optional)
+
+For cloud deployments (e.g., Streamlit Community Cloud), you can add a password gate:
+
+1. Create a file at `.streamlit/secrets.toml`
+2. Add the following line:
+   ```toml
+   password = "your-secret-password"
+   ```
+3. The file is gitignored and will never be committed.
+
+When no secret is configured (typical for local use), the password gate is skipped entirely — no setup needed.
+
+On Streamlit Community Cloud, add the secret via the app settings UI instead of a local file.
 
 ## Input Files (7 per day)
 
@@ -82,26 +98,37 @@ The app auto-detects which file is which — no need to name them in any specifi
 - **Sheet 1**: daily report matching the legacy master file format — title bar, headers, data, totals row, formatting, freeze panes, print-ready
 - **Sheet 2 ("ניתוח")**: analytics — branch ranking table, group summary, 4 embedded charts
 
-## Technical Architecture
+## Project Structure
 
-The entire app is a single Python file (`app.py`, ~2000 lines) with this structure:
+```
+app.py              — Entry point: auth → sidebar → process files → render dashboard
+config.py           — Shared constants (branch maps, columns, display order)
+auth.py             — Optional password gate using st.secrets
 
-1. **Constants** — branch name mappings, column definitions, display order
-2. **File classifier** — auto-detects uploaded file types by content inspection
-3. **6 parsers** — one per file type, each returns a normalized pandas DataFrame
-4. **Merge engine** — outer-joins all sources into a unified 9-column report
-5. **Excel generator** — creates a formatted 2-sheet workbook with openpyxl
-6. **Streamlit UI** — sidebar, KPIs, analytics section, charts, data table, download
+parsers/            — File classification and parsing
+  classifier.py     — Auto-detects uploaded file type
+  csv_parser.py     — CSV revenue parser
+  excel_parser.py   — 3 Excel parsers (avg transactions, portions, hourly)
+  pdf_parser.py     — 2 PDF parsers (Paz sales + portions)
 
-### Key Technical Details
+logic/              — Business logic
+  merge.py          — Branch name normalization + multi-source merge
 
-- **Hebrew RTL**: all sheets, charts, and UI are right-to-left
-- **PDF text extraction**: Hebrew characters appear reversed in extracted text. A pattern-matching dictionary handles the mapping.
-- **Date filtering**: partner branch PDFs contain cumulative monthly data. The parser extracts only the selected date's row.
-- **Encoding detection**: CSVs use an ordered fallback chain (`utf-8-sig → cp1255 → utf-8 → iso-8859-8`) to handle Windows vs. macOS encoding differences.
-- **Google Sheets compatibility**: Excel charts use 34-row vertical gaps to prevent overlap when the file is opened in Google Sheets.
-- **Dark mode**: all custom HTML uses `rgba()` and `color: inherit` — works in both Streamlit themes.
-- **Caching**: all parser functions use `@st.cache_data` to avoid re-parsing on Streamlit reruns.
+export/             — Report generation
+  excel_export.py   — 2-sheet formatted Excel with charts
+
+ui/                 — Streamlit UI components
+  styles.py         — Theme-aware CSS
+  sidebar.py        — Sidebar rendering
+  kpi_cards.py      — KPI card rendering
+  analytics.py      — Analytics section (rankings, summaries)
+  charts.py         — 4 chart tabs
+  data_table.py     — Data table + debug expander
+
+requirements.txt    — Python dependencies (4 packages)
+run.bat             — Windows launcher (double-click)
+run.command         — macOS launcher (double-click)
+```
 
 ## Dependencies
 
@@ -114,31 +141,21 @@ pdfplumber>=0.10.0
 
 No additional dependencies should be added unless strictly necessary.
 
-## Project Structure
-
-```
-app.py              — The entire application (single file)
-requirements.txt    — Python dependencies (4 packages)
-run.bat             — Windows launcher (double-click)
-run.command         — macOS launcher (double-click)
-.gitignore          — Excludes data files, venv, generated reports
-CLAUDE.md           — Internal context file for Claude Code sessions
-README.md           — This file
-```
-
 ## Security & Data Privacy
 
 - The app runs **entirely locally** — no data is sent to any server or cloud service
 - All file processing happens in-memory within the local Python process
 - Source data files (CSV, Excel, PDF) are excluded from git via `.gitignore`
 - Generated Excel reports are excluded from git via `.gitignore`
-- No credentials, API keys, or authentication are involved
+- The optional password gate uses `st.secrets` (gitignored)
 - The virtual environment is created locally and excluded from git
 
-## Design Decisions
+## Technical Details
 
-- **Single file**: the app is intentionally kept as one `app.py` file rather than split into modules. The user is non-technical, and a single file is easier to share, backup, and troubleshoot.
-- **No database**: all processing is stateless and file-based. There is no persistence between sessions.
-- **Minimal dependencies**: only 4 pip packages. No plotly, altair, or other heavy visualization libraries.
-- **Defensive parsing**: every parser has try/except blocks and encoding fallbacks. Bad data produces warnings, not crashes.
-- **Hebrew-first UI**: every user-facing string is in Hebrew. Error messages explain what went wrong and what to do about it.
+- **Hebrew RTL**: all sheets, charts, and UI are right-to-left
+- **PDF text extraction**: Hebrew characters appear reversed in extracted text. A pattern-matching dictionary handles the mapping.
+- **Date filtering**: partner branch PDFs contain cumulative monthly data. The parser extracts only the selected date's row.
+- **Encoding detection**: CSVs use an ordered fallback chain (`utf-8-sig → cp1255 → utf-8 → iso-8859-8`) to handle Windows vs. macOS encoding differences.
+- **Google Sheets compatibility**: Excel charts use 34-row vertical gaps to prevent overlap when the file is opened in Google Sheets.
+- **Dark mode**: all custom HTML uses `rgba()` and `color: inherit` — works in both Streamlit themes.
+- **Caching**: all parser functions use `@st.cache_data` to avoid re-parsing on Streamlit reruns.

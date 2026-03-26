@@ -23,32 +23,51 @@ All visible UI text is in **Hebrew (RTL)**.
 ## 3. Project Files
 
 ```
-app.py            — The entire application (~2000 lines, single file)
-requirements.txt  — 4 deps: streamlit, pandas, openpyxl, pdfplumber
-run.bat           — Windows double-click launcher (creates venv, installs deps, runs)
-run.command       — macOS double-click launcher (same flow, bash)
-.gitignore        — Excludes data files, venv, preview xlsx
-CLAUDE.md         — This file
-README.md         — User/developer facing documentation
+app.py              — Lightweight entry point (~170 lines): auth → sidebar → process → render
+config.py           — Shared constants (branch maps, column definitions, display order)
+auth.py             — Password gate using st.secrets (optional, skipped when unconfigured)
+
+parsers/            — File classification and parsing
+  __init__.py       — Re-exports all parser functions
+  classifier.py     — Auto-detects uploaded file type by content inspection
+  csv_parser.py     — CSV revenue parser (column D, encoding fallback chain)
+  excel_parser.py   — 3 Excel parsers (avg transactions, portions, hourly)
+  pdf_parser.py     — 2 PDF parsers (Paz sales + portions) + PAZ_STORE_PATTERNS
+
+logic/              — Business logic
+  __init__.py       — Re-exports normalize_branch, merge_all
+  merge.py          — Branch name normalization + multi-source outer-join merge
+
+export/             — Report generation
+  __init__.py       — Re-exports generate_excel
+  excel_export.py   — 2-sheet formatted Excel with charts (CHART_GAP = 34)
+
+ui/                 — Streamlit UI components
+  __init__.py
+  styles.py         — Theme-aware CSS (dark mode safe)
+  sidebar.py        — Sidebar: branding, date picker, file uploader
+  kpi_cards.py      — Hero revenue card + 4 secondary KPI cards
+  analytics.py      — Paz vs Chain split, ranking table, summary table
+  charts.py         — 4 chart tabs (revenue, efficiency, portions, meal %)
+  data_table.py     — Formatted data table + debug expander
+
+requirements.txt    — 4 deps: streamlit, pandas, openpyxl, pdfplumber
+run.bat             — Windows double-click launcher (creates venv, installs deps, runs)
+run.command         — macOS double-click launcher (same flow, bash)
+.gitignore          — Excludes data files, venv, secrets, preview xlsx
+CLAUDE.md           — This file
+README.md           — User/developer facing documentation
 ```
 
-There are NO other Python files. Everything lives in `app.py`.
+## 4. Architecture
 
-## 4. Architecture of app.py
-
-The file is structured in this order:
-
-### Constants (lines ~30–100)
+### Constants (`config.py`)
 - `BRANCH_NAME_MAP` — dict mapping raw source names → canonical master names
 - `PAZ_BRANCHES` — set of 7 branch names that come from PDF sources (gas-station partnership)
 - `MASTER_COLUMNS` — the 9 columns in the output report
 - `MASTER_BRANCH_ORDER` — fixed display order (17 chain + 7 partner = 24 branches)
 
-### Helpers (lines ~105–180)
-- `normalize_branch(name, is_paz_context)` — maps any raw name to master name
-- `classify_file(file_name, file_bytes)` — auto-detects which of 7 file types was uploaded
-
-### 6 Parsers (lines ~189–780)
+### Parsers (`parsers/`)
 Each returns a DataFrame with a `סניף` (branch) column:
 
 | Function | Input | Extracts |
@@ -62,22 +81,31 @@ Each returns a DataFrame with a `סניף` (branch) column:
 
 **All parsers are decorated with `@st.cache_data`** to avoid re-parsing on Streamlit reruns.
 
-### Merge Logic (lines ~783–891)
+### Business Logic (`logic/merge.py`)
+- `normalize_branch(name)` — maps any raw name to master name via `BRANCH_NAME_MAP`
 - `merge_all(...)` — outer-joins all 6 data sources into one DataFrame
 - Paz data overwrites/appends to the merged frame
 - Calculates meal percentage
 - Sorts by `MASTER_BRANCH_ORDER`
 
-### Excel Export (lines ~897–1462)
+### Excel Export (`export/excel_export.py`)
 - `generate_excel(df, report_date)` — creates a 2-sheet .xlsx in memory
   - **Sheet 1** ("DD.M"): the main daily report with 9 columns, totals row, formatting
   - **Sheet 2** ("ניתוח"): analytics — ranking table, Paz vs chain summary, 4 charts
-- `_build_analysis_sheet(wb, df, report_date, data_sheet_name)` — builds Sheet 2
-  - Charts use `CHART_GAP = 34` rows between anchors (Google Sheets compatibility fix)
-  - Helper data for charts is written to column 14+ (offscreen)
+- Charts use `CHART_GAP = 34` rows between anchors (Google Sheets compatibility fix)
+- Helper data for charts is written to column 14+ (offscreen)
 
-### Streamlit UI / main() (lines ~1468–end)
-- CSS, sidebar, file upload, KPI cards, analytics section, chart tabs, data table, download
+### Streamlit UI (`ui/`)
+Rendered in this order by `app.py`:
+1. **Auth gate** (`auth.py`): password check (skipped if no secret configured)
+2. **CSS** (`ui/styles.py`): theme-aware styles
+3. **Sidebar** (`ui/sidebar.py`): branding → date picker → file uploader → download button
+4. **File checklist**: warns if required files are missing, shows ✅/❌ per type
+5. **KPI cards** (`ui/kpi_cards.py`): hero revenue card (full width) + 4 secondary cards
+6. **Analytics** (`ui/analytics.py`): Paz vs Chain split, ranking table, summary table
+7. **Charts** (`ui/charts.py`): 4 chart tabs
+8. **Data table** (`ui/data_table.py`): full merged data + debug expander
+9. **Download buttons**: sidebar + main area
 
 ## 5. The 7 Input Files
 
@@ -133,26 +161,19 @@ The parsers **sum** (not replace) when multiple lines map to the same branch.
 - Path separators: all use `pathlib` or forward slashes
 - Launchers: `run.bat` for Windows, `run.command` for macOS (both create venv automatically)
 
-## 9. Dashboard UI (Streamlit)
+## 9. Authentication
 
-The main() function renders in this order:
-1. **Sidebar**: branding → date picker → file uploader (7 files) → download button
-2. **File checklist**: warns if required files are missing, shows ✅/❌ per type
-3. **KPI cards**: hero revenue card (full width) + 4 secondary cards
-4. **Analytics section** ("📈 ניתוח יומי"):
-   - Paz vs Chain revenue split (two colored cards)
-   - Branch ranking table (sorted by revenue, top 3 gold, bottom 3 red)
-   - Group summary table (chain / partner / total)
-5. **4 chart tabs**: revenue by branch, revenue per hour, portions+meals, meal %
-6. **Data table**: full merged data
-7. **Download button** (also in sidebar)
-8. **Debug expander**: raw parsed DataFrames
+- Uses `st.secrets["password"]` for optional password protection
+- When no secret is configured (local use), access is granted automatically
+- Setup: create `.streamlit/secrets.toml` with `password = "your-password"`
+- The secrets file is gitignored
 
-### Dark Mode
+## 10. Dark Mode
+
 All custom HTML uses `rgba()` backgrounds and `color: inherit` — no hardcoded
 light-mode text colors. Cards use white text on gradient backgrounds.
 
-## 10. Excel Export Structure
+## 11. Excel Export Structure
 
 ### Sheet 1 (data sheet, named by day e.g. "25.3"):
 - Row 1: merged title bar with date
@@ -166,7 +187,7 @@ light-mode text colors. Cards use white text on gradient backgrounds.
 - Section B: Chain vs Partner group summary
 - Section C: 4 charts stacked vertically with 34-row gaps (Google Sheets compat)
 
-## 11. Known Bugs That Were Fixed (Don't Re-Introduce)
+## 12. Known Bugs That Were Fixed (Don't Re-Introduce)
 
 1. **CSV column bug**: NEVER use column E for revenue. Always use column D ("בחירת מדד").
 2. **Reversed Hebrew in PDFs**: `PAZ_STORE_PATTERNS` handles this. Don't simplify the dict.
@@ -174,12 +195,12 @@ light-mode text colors. Cards use white text on gradient backgrounds.
 4. **Chart overlap in Google Sheets**: Charts need `CHART_GAP = 34` rows between anchors.
 5. **Dark mode text**: Never use hardcoded dark text colors in custom HTML.
 
-## 12. Rules for Future Changes
+## 13. Rules for Future Changes
 
 - **Do NOT add new pip dependencies** unless absolutely necessary and approved by the user.
 - **Do NOT modify parsing logic** when making UI changes (and vice versa).
 - **All user-facing text must be in Hebrew.**
 - **Test on both light and dark Streamlit themes.**
 - The user is non-technical — error messages must be actionable and in Hebrew.
-- The app is a **single file** (`app.py`). Don't split it unless the user requests it.
 - Always keep the `@st.cache_data` decorators on parser functions.
+- When modifying a module, keep changes scoped to that module's responsibility.
