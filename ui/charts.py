@@ -1,11 +1,13 @@
-"""Chart tabs — revenue, efficiency, portions, meal %."""
+"""Chart section — revenue, efficiency, portions, meal %."""
 
 import pandas as pd
 import streamlit as st
 
 
 def render_charts(merged: pd.DataFrame, ranking_df: pd.DataFrame):
-    """Render the 4 chart tabs."""
+    """Render the 4 chart sub-tabs."""
+    st.markdown('<div class="section-hdr">📈 גרפים ומגמות</div>', unsafe_allow_html=True)
+
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 מכר לפי סניף",
         "⏱️ מכר לשעת פעילות",
@@ -15,6 +17,7 @@ def render_charts(merged: pd.DataFrame, ranking_df: pd.DataFrame):
 
     with tab1:
         chart_df = merged[["סניף", 'מכר כולל מע"מ']].copy()
+        # Sort ascending so highest values render at the top of horizontal bars
         chart_df = chart_df.sort_values('מכר כולל מע"מ', ascending=True)
         st.bar_chart(
             chart_df.set_index("סניף")['מכר כולל מע"מ'],

@@ -150,17 +150,11 @@ def main():
         st.warning("לא נמצאו נתונים לתאריך הנבחר. ודא שהקבצים תואמים את התאריך.")
         return
 
-    # ── Dashboard sections ──
-    render_kpi_cards(merged)
-    ranking_df = render_analytics(merged)
-    render_charts(merged, ranking_df)
-    render_data_table(merged)
+    # ── Toast: report ready ──
+    st.toast("✅ הדוח מוכן!", icon="🧆")
 
-    # ── Download buttons ──
-    st.markdown("---")
-
+    # ── Download buttons (above tabs — always visible) ──
     excel_bytes = generate_excel(merged, report_date)
-
     date_str = report_date.strftime("%d.%m.%y")
     file_name = f"דוח_יומי_{date_str}.xlsx"
 
@@ -182,9 +176,28 @@ def main():
         key="main_download",
     )
 
-    # ── Debug ──
-    render_debug(csv_data, avg_trans_data, portions_data, hourly_data,
-                 paz_sales_list, paz_portions_list)
+    # ── Tabbed navigation ──
+    tab_dashboard, tab_charts, tab_data = st.tabs([
+        "📊 דשבורד מרכזי",
+        "📈 גרפים ומגמות",
+        "📋 נתונים מלאים",
+    ])
+
+    # Compute ranking_df outside tabs so it's available to both dashboard and charts
+    ranking_df = None
+
+    with tab_dashboard:
+        render_kpi_cards(merged)
+        ranking_df = render_analytics(merged)
+
+    with tab_charts:
+        if ranking_df is not None:
+            render_charts(merged, ranking_df)
+
+    with tab_data:
+        render_data_table(merged)
+        render_debug(csv_data, avg_trans_data, portions_data, hourly_data,
+                     paz_sales_list, paz_portions_list)
 
 
 if __name__ == "__main__":
