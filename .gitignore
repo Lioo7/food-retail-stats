@@ -23,3 +23,7 @@ run.command
 
 # Virtual Environment
 venv/
+
+# AI Tools
+.claude/
+.cursor/
